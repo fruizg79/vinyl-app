@@ -404,7 +404,7 @@ Rules: leave fields empty string if not visible. speed must be "33","45","78" or
       const res = await fetch("/.netlify/functions/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content }] }),
+        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1000, messages: [{ role: "user", content }] }),
       });
       const d = await res.json();
       const txt = d.content?.find(b=>b.type==="text")?.text||"";
