@@ -401,7 +401,7 @@ Return ONLY a valid JSON object (no markdown, no backticks, no extra text) with 
 {"artist":"","album":"","year":"","label":"","country":"","genre":"","speed":"","catalog_number":"","edition":"","tracklist_a":[],"tracklist_b":[]}
 Rules: leave fields empty string if not visible. speed must be "33","45","78" or "". genre must be one of: Blues,Classical,Country,Electronic,Folk,Funk,Jazz,Latin,Pop,Punk,R&B / Soul,Reggae,Rock,Soundtrack,World — or "". tracklist arrays contain track title strings, empty array if none visible.`});
       setAiSt("Claude is reading your vinyl…");
-      const res = await fetch("/api/analyze", {
+      const res = await fetch("/.netlify/functions/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content }] }),
