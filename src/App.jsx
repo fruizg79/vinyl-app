@@ -390,6 +390,7 @@ function AddForm({ onSaved, onMsg }) {
     if(!avail.length){onMsg("Upload at least one photo first","err");return;}
     setAnalyzing(true); setAiSt("Converting images…");
     try {
+      // ── Step 1: AI image analysis ──────────────────────────────────────────
       const content = [];
       for(const [type,file] of avail){
         const data = await b64(file);
@@ -409,18 +410,60 @@ Rules: leave fields empty string if not visible. speed must be "33","45","78" or
       const d = await res.json();
       const txt = d.content?.find(b=>b.type==="text")?.text||"";
       const p = JSON.parse(txt.replace(/```json|```/g,"").trim());
-      setF(prev=>({
-        ...prev,
-        artist:p.artist||prev.artist, album:p.album||prev.album, year:p.year||prev.year,
-        label:p.label||prev.label, country:p.country||prev.country,
-        genre:GENRES.includes(p.genre)?p.genre:prev.genre,
-        speed:["33","45","78"].includes(String(p.speed))?String(p.speed):prev.speed,
-        catalog_number:p.catalog_number||prev.catalog_number,
-        edition:p.edition||prev.edition,
-        tracklist_a:p.tracklist_a?.length>0?p.tracklist_a:prev.tracklist_a,
-        tracklist_b:p.tracklist_b?.length>0?p.tracklist_b:prev.tracklist_b,
-      }));
-      setAiSt("✓ Fields filled — review and confirm");
+
+      // Build the AI-filled state (kept as base for MusicBrainz merge)
+      const aiFields = {
+        artist:p.artist||"", album:p.album||"", year:p.year||"",
+        label:p.label||"", country:p.country||"",
+        genre:GENRES.includes(p.genre)?p.genre:"",
+        speed:["33","45","78"].includes(String(p.speed))?String(p.speed):"33",
+        catalog_number:p.catalog_number||"", edition:p.edition||"",
+        tracklist_a:p.tracklist_a?.length>0?p.tracklist_a:[""],
+        tracklist_b:p.tracklist_b?.length>0?p.tracklist_b:[""],
+      };
+
+      setF(prev=>({...prev,...aiFields}));
+
+      // ── Step 2: MusicBrainz enrichment (only if AI found artist + album) ──
+      if(aiFields.artist && aiFields.album){
+        setAiSt("Searching MusicBrainz for metadata…");
+        try {
+          const mbRes = await fetch("/.netlify/functions/musicbrainz", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ artist: aiFields.artist, album: aiFields.album }),
+          });
+          if(mbRes.ok){
+            const mb = await mbRes.json();
+            if(mb.found){
+              // Only fill fields that AI left empty
+              setF(prev=>({
+                ...prev,
+                year:           prev.year            || mb.year            || prev.year,
+                label:          prev.label           || mb.label           || prev.label,
+                country:        prev.country         || mb.country         || prev.country,
+                catalog_number: prev.catalog_number  || mb.catalog_number  || prev.catalog_number,
+                tracklist_a:    (prev.tracklist_a.filter(t=>t.trim()).length > 0)
+                                  ? prev.tracklist_a
+                                  : (mb.tracklist_a?.length > 0 ? mb.tracklist_a : prev.tracklist_a),
+                tracklist_b:    (prev.tracklist_b.filter(t=>t.trim()).length > 0)
+                                  ? prev.tracklist_b
+                                  : (mb.tracklist_b?.length > 0 ? mb.tracklist_b : prev.tracklist_b),
+              }));
+              setAiSt("✓ Fields filled by AI + MusicBrainz — review and confirm");
+            } else {
+              setAiSt("✓ Fields filled by AI — MusicBrainz had no match");
+            }
+          } else {
+            setAiSt("✓ Fields filled by AI — MusicBrainz unavailable");
+          }
+        } catch(mbErr) {
+          console.warn("MusicBrainz lookup failed:", mbErr);
+          setAiSt("✓ Fields filled by AI — MusicBrainz lookup failed");
+        }
+      } else {
+        setAiSt("✓ Fields filled — review and confirm");
+      }
     } catch(e) {
       console.error(e); onMsg("AI analysis failed — fill manually","err"); setAiSt("");
     } finally { setAnalyzing(false); }
