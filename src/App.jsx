@@ -1,17 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 
-// ── Supabase config ──────────────────────────────────────────────────────────
+// ── Supabase config (read-only operations only — writes go via record-write function) ──
 const SB_URL = "https://tjkrgnznsspbpzgaskpk.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqa3Jnbnpuc3NwYnB6Z2Fza3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNzYxMzAsImV4cCI6MjA4OTc1MjEzMH0.6SckNM932mX_CBTS8V8XuNNvAlZ7FF0EF_rnU-3m1zQ";
-
-// Admin password — set VITE_ADMIN_PASSWORD in Netlify dashboard → Site settings → Environment variables
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
 
 const sbH = {
   "apikey": SB_KEY,
   "Authorization": `Bearer ${SB_KEY}`,
   "Content-Type": "application/json",
-  "Prefer": "return=representation",
 };
 
 async function sbSelect(table, qs = "") {
@@ -20,31 +16,19 @@ async function sbSelect(table, qs = "") {
   return r.json();
 }
 
-async function sbInsert(table, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method: "POST", headers: sbH, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function sbUpdate(table, id, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: sbH, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function sbDelete(table, id) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "DELETE", headers: sbH });
-  if (!r.ok) throw new Error(await r.text());
-}
-
-async function sbUpload(path, file) {
-  const r = await fetch(`${SB_URL}/storage/v1/object/vinyl-images/${path}`, {
+// ── Write operations via Netlify function (requires session token) ────────────
+async function writeRecord(token, payload) {
+  const r = await fetch("/.netlify/functions/record-write", {
     method: "POST",
-    headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": file.type || "image/jpeg", "x-upsert": "true" },
-    body: file,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return `${SB_URL}/storage/v1/object/public/vinyl-images/${path}`;
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Write failed");
+  return data;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -189,7 +173,6 @@ const css = `
   .empty p { font-family:'Playfair Display',serif; font-size:1.15rem; font-style:italic; margin-top:0.85rem; }
   .zoom-ov { position:fixed; inset:0; background:rgba(0,0,0,0.96); z-index:300; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
   .zoom-ov img { max-width:92vw; max-height:92vh; object-fit:contain; }
-  /* ── Password modal ─────────────────────────────────────────────────────── */
   .pw-ov { position:fixed; inset:0; background:rgba(10,8,4,0.93); z-index:400; display:flex; align-items:center; justify-content:center; padding:1rem; backdrop-filter:blur(6px); }
   .pw-box { background:var(--cream); max-width:340px; width:100%; border-top:4px solid var(--amber); padding:2rem; box-shadow:0 32px 80px rgba(0,0,0,0.5); border-radius:0 0 2px 2px; }
   .pw-title { font-family:'Playfair Display',serif; font-size:1.25rem; margin-bottom:0.25rem; }
@@ -199,7 +182,8 @@ const css = `
   .pw-input.pw-err-field { border-color:var(--red); }
   .pw-err { font-family:'DM Mono',monospace; font-size:0.65rem; color:var(--red); margin-bottom:0.7rem; letter-spacing:0.04em; }
   .pw-submit { width:100%; padding:0.72rem; background:var(--amber); color:var(--ink); border:none; font-family:'DM Mono',monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; cursor:pointer; border-radius:2px; font-weight:500; transition:all 0.2s; }
-  .pw-submit:hover { background:var(--ink); color:var(--amber); }
+  .pw-submit:hover:not(:disabled) { background:var(--ink); color:var(--amber); }
+  .pw-submit:disabled { opacity:0.5; cursor:not-allowed; }
   .pw-cancel { width:100%; padding:0.55rem; background:transparent; color:var(--dust); border:1px solid rgba(140,123,94,0.3); font-family:'DM Mono',monospace; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; cursor:pointer; border-radius:2px; margin-top:0.5rem; transition:all 0.2s; }
   .pw-cancel:hover { background:var(--paper); color:var(--ink); }
   @media(max-width:600px){
@@ -238,15 +222,30 @@ function b64(file) {
 
 // ── Password modal ────────────────────────────────────────────────────────────
 function PasswordModal({ onSuccess, onCancel }) {
-  const [pw, setPw]   = useState("");
-  const [err, setErr] = useState(false);
+  const [pw, setPw]         = useState("");
+  const [err, setErr]       = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function submit() {
-    if (pw === ADMIN_PASSWORD) {
-      onSuccess();
-    } else {
-      setErr(true);
-      setPw("");
+  async function submit() {
+    if (!pw.trim()) return;
+    setLoading(true); setErr("");
+    try {
+      const res = await fetch("/.netlify/functions/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        onSuccess(data.token);
+      } else {
+        setErr(data.error || "Incorrect password");
+        setPw("");
+      }
+    } catch {
+      setErr("Connection error — try again");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -266,11 +265,13 @@ function PasswordModal({ onSuccess, onCancel }) {
           placeholder="••••••••"
           value={pw}
           autoFocus
-          onChange={e => { setPw(e.target.value); setErr(false); }}
+          onChange={e => { setPw(e.target.value); setErr(""); }}
           onKeyDown={onKey}
         />
-        {err && <div className="pw-err">Incorrect password — try again</div>}
-        <button className="pw-submit" onClick={submit}>Unlock</button>
+        {err && <div className="pw-err">{err}</div>}
+        <button className="pw-submit" onClick={submit} disabled={loading || !pw.trim()}>
+          {loading ? <><span className="spin"/> Verifying…</> : "Unlock"}
+        </button>
         <button className="pw-cancel" onClick={onCancel}>Cancel</button>
       </div>
     </div>
@@ -279,29 +280,28 @@ function PasswordModal({ onSuccess, onCancel }) {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView]           = useState("col"); // "col" | "add" | "edit"
+  const [view, setView]             = useState("col");
   const [editRecord, setEditRecord] = useState(null);
-  const [dm, setDm]               = useState("gal");
-  const [records, setRecords]     = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [q, setQ]                 = useState("");
-  const [fg, setFg]               = useState("");
-  const [fc, setFc]               = useState("");
-  const [sel, setSel]             = useState(null);
-  const [zoom, setZoom]           = useState(null);
-  const [toast, setToast]         = useState(null);
+  const [dm, setDm]                 = useState("gal");
+  const [records, setRecords]       = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [q, setQ]                   = useState("");
+  const [fg, setFg]                 = useState("");
+  const [fc, setFc]                 = useState("");
+  const [sel, setSel]               = useState(null);
+  const [zoom, setZoom]             = useState(null);
+  const [toast, setToast]           = useState(null);
 
-  // Session-level admin flag — survives within the tab, resets on full reload
-  const [isAdmin, setIsAdmin]     = useState(false);
-  // Pending protected action — { action: fn } | null
-  const [pwPending, setPwPending] = useState(null);
+  // Session token — lives in memory only, never in localStorage/env
+  const [token, setToken]           = useState(null);
+  const [pwPending, setPwPending]   = useState(null); // { action: fn } | null
 
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
     try { setRecords(await sbSelect("records", "?select=*,images(*)&order=artist.asc")); }
-    catch { msg("Error loading", "err"); }
+    catch { msg("Error loading collection", "err"); }
     setLoading(false);
   }
 
@@ -310,17 +310,16 @@ export default function App() {
     setTimeout(() => setToast(null), 3400);
   }
 
-  // Wrap any write action with password gate
   function requireAdmin(action) {
-    if (isAdmin) { action(); }
+    if (token) { action(token); }
     else { setPwPending({ action }); }
   }
 
-  function onPwSuccess() {
-    setIsAdmin(true);
+  function onPwSuccess(newToken) {
+    setToken(newToken);
     const action = pwPending?.action;
     setPwPending(null);
-    if (action) action();
+    if (action) action(newToken);
   }
 
   const gi = (rec, type) => rec.images?.find(i => i.type === type)?.url;
@@ -345,13 +344,15 @@ export default function App() {
   }
 
   function goDelete(rec) {
-    requireAdmin(async () => {
+    requireAdmin(async (t) => {
       if (!window.confirm("Delete this record?")) return;
       try {
-        await sbDelete("records", rec.id);
+        await writeRecord(t, { action: "delete", id: rec.id });
         setSel(null); load(); msg("Record deleted");
       } catch(e) {
-        console.error(e); msg("Error deleting", "err");
+        console.error(e);
+        if (e.message.includes("Unauthorized")) { setToken(null); msg("Session expired — please log in again", "err"); }
+        else msg("Error deleting record", "err");
       }
     });
   }
@@ -362,7 +363,7 @@ export default function App() {
       <header className="hdr">
         <div className="hdr-logo"><VI s={25} c="#C8862A" /> Vinyl Archive <em>/ collection</em></div>
         <nav className="hdr-nav">
-          {isAdmin && <span className="auth-badge">🔓 admin</span>}
+          {token && <span className="auth-badge">🔓 admin</span>}
           <button className={`nb ${view==="col"?"on":""}`} onClick={()=>setView("col")}>Collection</button>
           <button className={`nb ${view!=="col"?"on":""}`} onClick={goAdd}>+ Add</button>
         </nav>
@@ -386,11 +387,9 @@ export default function App() {
                 <button className={`vb ${dm==="list"?"on":""}`} onClick={()=>setDm("list")}>☰</button>
               </div>
             </div>
-
             <div className="stbar">
               {loading ? "Loading…" : `${filtered.length} record${filtered.length!==1?"s":""}${records.length!==filtered.length?` of ${records.length}`:""}`}
             </div>
-
             {loading ? (
               <div className="empty"><div className="spin" style={{width:30,height:30,margin:"0 auto"}} /></div>
             ) : filtered.length === 0 ? (
@@ -428,14 +427,16 @@ export default function App() {
           <RecordForm
             key={editRecord?.id ?? "new"}
             record={editRecord}
+            token={token}
             onSaved={() => { setView("col"); load(); msg(editRecord ? "Record updated!" : "Record saved!"); }}
             onCancel={() => setView("col")}
             onMsg={msg}
+            onSessionExpired={() => { setToken(null); msg("Session expired — please log in again", "err"); }}
           />
         )}
       </main>
 
-      {/* ── Detail modal ── */}
+      {/* Detail modal */}
       {sel && (
         <div className="ov" onClick={e=>e.target===e.currentTarget&&setSel(null)}>
           <div className="mod">
@@ -486,7 +487,6 @@ export default function App() {
       {zoom && <div className="zoom-ov" onClick={()=>setZoom(null)}><img src={zoom} alt="zoom" /></div>}
       {toast && <div className={`toast ${toast.type==="err"?"err":""}`}>{toast.text}</div>}
 
-      {/* ── Password modal ── */}
       {pwPending && (
         <PasswordModal
           onSuccess={onPwSuccess}
@@ -498,7 +498,7 @@ export default function App() {
 }
 
 // ── Record form — shared by Add and Edit ─────────────────────────────────────
-function RecordForm({ record, onSaved, onCancel, onMsg }) {
+function RecordForm({ record, token, onSaved, onCancel, onMsg, onSessionExpired }) {
   const isEdit = Boolean(record);
 
   const emptyFields = {
@@ -523,17 +523,17 @@ function RecordForm({ record, onSaved, onCancel, onMsg }) {
     tracklist_b:    record.tracklist_b?.length ? record.tracklist_b : [""],
   } : emptyFields;
 
-  const [ph, setPh]           = useState({ front:null, back:null, label_img:null });
-  const [pv, setPv]           = useState({
+  const [ph, setPh]               = useState({ front:null, back:null, label_img:null });
+  const [pv, setPv]               = useState({
     front:     isEdit ? (record.images?.find(i=>i.type==="front")?.url  || null) : null,
     back:      isEdit ? (record.images?.find(i=>i.type==="back")?.url   || null) : null,
     label_img: isEdit ? (record.images?.find(i=>i.type==="label")?.url  || null) : null,
   });
-  const [f, setF]             = useState(initialFields);
-  const [aiSt, setAiSt]       = useState("");
-  const [analyzing, setAnalyzing]   = useState(false);
+  const [f, setF]                 = useState(initialFields);
+  const [aiSt, setAiSt]           = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
   const [mbSearching, setMbSearching] = useState(false);
-  const [saving, setSaving]   = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [showReqErr, setShowReqErr] = useState(false);
 
   const camRef = { front: useRef(null), back: useRef(null), label_img: useRef(null) };
@@ -547,7 +547,7 @@ function RecordForm({ record, onSaved, onCancel, onMsg }) {
     e.target.value = "";
   }
 
-  // ── Optional AI image analysis ────────────────────────────────────────────
+  // ── Optional AI analysis ──────────────────────────────────────────────────
   async function analyze() {
     const avail = Object.entries(ph).filter(([,v])=>v);
     if (!avail.length) { onMsg("Upload at least one photo first","err"); return; }
@@ -621,17 +621,17 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
         }));
         setAiSt("✓ MusicBrainz fields filled — review and save");
       } else {
-        setAiSt("MusicBrainz: no match found for this artist + album");
+        setAiSt("MusicBrainz: no match found — fill remaining fields manually");
       }
     } catch(e) {
       console.error(e); setAiSt("MusicBrainz search failed — fill fields manually");
     } finally { setMbSearching(false); }
   }
 
-  const u  = (k,v)   => setF(p=>({...p,[k]:v}));
-  const ut = (side,i,v) => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=[...p[k]];l[i]=v;return{...p,[k]:l};}); };
-  const at = side    => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>({...p,[k]:[...p[k],""]})); };
-  const rt = (side,i)=> { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=p[k].filter((_,x)=>x!==i);return{...p,[k]:l.length?l:[""]};}); };
+  const u   = (k,v)    => setF(p=>({...p,[k]:v}));
+  const ut  = (side,i,v) => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=[...p[k]];l[i]=v;return{...p,[k]:l};}); };
+  const at  = side     => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>({...p,[k]:[...p[k],""]})); };
+  const rt  = (side,i) => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=p[k].filter((_,x)=>x!==i);return{...p,[k]:l.length?l:[""]};}); };
 
   async function save() {
     if (!f.artist || !f.album) {
@@ -641,8 +641,9 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
     }
     setShowReqErr(false);
     setSaving(true);
+
     try {
-      const payload = {
+      const recordPayload = {
         artist:         f.artist          || null,
         album:          f.album           || null,
         year:           f.year            ? parseInt(f.year) : null,
@@ -658,36 +659,40 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
         tracklist_b:    f.tracklist_b.filter(t=>t.trim()),
       };
 
-      let recordId;
-      if (isEdit) {
-        await sbUpdate("records", record.id, payload);
-        recordId = record.id;
-      } else {
-        const [rec] = await sbInsert("records", payload);
-        recordId = rec.id;
-      }
-
-      // Upload any new or replaced photos
+      // Convert any new photo files to base64 for the function
+      const images = [];
       for (const [type, file] of Object.entries(ph)) {
         if (!file) continue;
-        const storageType = type === "label_img" ? "label" : type;
-        const ext = file.name.split(".").pop() || "jpg";
-        const url = await sbUpload(`${recordId}/${storageType}.${ext}`, file);
-        if (isEdit) {
-          const existing = record.images?.find(i=>i.type===storageType);
-          if (existing) {
-            await sbUpdate("images", existing.id, { url });
-          } else {
-            await sbInsert("images", { record_id: recordId, type: storageType, url });
-          }
-        } else {
-          await sbInsert("images", { record_id: recordId, type: storageType, url });
-        }
+        const base64 = await b64(file);
+        images.push({
+          storageType: type === "label_img" ? "label" : type,
+          ext:         file.name.split(".").pop() || "jpg",
+          mimeType:    file.type || "image/jpeg",
+          base64,
+        });
+      }
+
+      if (isEdit) {
+        await writeRecord(token, {
+          action: "update",
+          id: record.id,
+          record: recordPayload,
+          images,
+          existingImages: record.images || [],
+        });
+      } else {
+        await writeRecord(token, {
+          action: "insert",
+          record: recordPayload,
+          images,
+        });
       }
 
       onSaved();
     } catch(e) {
-      console.error(e); onMsg("Error saving","err");
+      console.error(e);
+      if (e.message.includes("Unauthorized")) { onSessionExpired(); }
+      else onMsg("Error saving record","err");
     } finally { setSaving(false); }
   }
 
@@ -702,7 +707,6 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
           : "Photos optional · AI optional · fill artist + album · save"}
       </div>
 
-      {/* Hidden file inputs */}
       {["front","back","label_img"].map(k=>(
         <input key={`cam-${k}`} ref={camRef[k]} type="file" accept="image/*" capture="environment"
           style={{display:"none"}} onChange={e=>onFileChange(k,e)} />
@@ -712,7 +716,6 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
           style={{display:"none"}} onChange={e=>onFileChange(k,e)} />
       ))}
 
-      {/* Photo zones */}
       <div className="pzones">
         {[["front","Front"],["back","Back"],["label_img","Label"]].map(([k,l])=>(
           <div key={k} className={`pz ${pv[k]?"filled":""}`}>
@@ -738,19 +741,16 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
         ))}
       </div>
 
-      {/* AI — optional, requires photos */}
       <button className="ai-btn" onClick={analyze} disabled={analyzing || !Object.values(ph).some(Boolean)}>
-        {analyzing ? <><span className="spin"/>Analyzing…</> : "✦ Analyze with AI  (optional)"}
+        {analyzing ? <><span className="spin"/> Analyzing…</> : "✦ Analyze with AI  (optional)"}
       </button>
 
-      {/* MusicBrainz — manual, requires artist + album */}
       <button className="mb-btn" onClick={searchMusicBrainz} disabled={!canMusicBrainz}>
-        {mbSearching ? <><span className="spin"/>Searching MusicBrainz…</> : "⊕ Complete with MusicBrainz"}
+        {mbSearching ? <><span className="spin"/> Searching MusicBrainz…</> : "⊕ Complete with MusicBrainz"}
       </button>
 
       {aiSt && <div className="ai-st">{aiSt}</div>}
 
-      {/* Record info */}
       <div className="fsec">
         <div className="fsec-t">Record info</div>
         <div className="fgrid" style={{marginBottom:"0.75rem"}}>
@@ -801,7 +801,6 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
         </div>
       </div>
 
-      {/* Tracklist */}
       <div className="fsec">
         <div className="fsec-t">Tracklist</div>
         <div className="tled">
@@ -824,7 +823,6 @@ Rules: leave fields as empty string if not visible. speed must be "33","45","78"
         </div>
       </div>
 
-      {/* Notes */}
       <div className="fsec">
         <div className="fsec-t">Personal notes</div>
         <div className="ff">
