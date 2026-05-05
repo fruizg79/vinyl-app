@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react";
 const SB_URL = "https://tjkrgnznsspbpzgaskpk.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqa3Jnbnpuc3NwYnB6Z2Fza3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNzYxMzAsImV4cCI6MjA4OTc1MjEzMH0.6SckNM932mX_CBTS8V8XuNNvAlZ7FF0EF_rnU-3m1zQ";
 
+// Admin password — set VITE_ADMIN_PASSWORD in Netlify dashboard → Site settings → Environment variables
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
+
 const sbH = {
   "apikey": SB_KEY,
   "Authorization": `Bearer ${SB_KEY}`,
@@ -19,6 +22,12 @@ async function sbSelect(table, qs = "") {
 
 async function sbInsert(table, body) {
   const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method: "POST", headers: sbH, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function sbUpdate(table, id, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: sbH, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -66,9 +75,10 @@ const css = `
   }
   .hdr-logo { font-family:'Playfair Display',serif; font-size:1.25rem; color:var(--amber); display:flex; align-items:center; gap:0.5rem; }
   .hdr-logo em { font-style:italic; color:var(--cream); opacity:0.55; font-size:0.78rem; }
-  .hdr-nav { display:flex; gap:0.35rem; }
+  .hdr-nav { display:flex; gap:0.35rem; align-items:center; }
   .nb { background:transparent; border:1px solid rgba(200,134,42,0.3); color:var(--cream); padding:0.32rem 0.8rem; border-radius:2px; cursor:pointer; font-family:'DM Mono',monospace; font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase; transition:all 0.2s; }
   .nb:hover,.nb.on { background:var(--amber); border-color:var(--amber); color:var(--vinyl); }
+  .auth-badge { font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--amber); letter-spacing:0.06em; }
   .main { max-width:1400px; margin:0 auto; padding:1.25rem; }
   .sbar { display:flex; gap:0.65rem; margin-bottom:1.1rem; flex-wrap:wrap; }
   .si { flex:1; min-width:160px; padding:0.5rem 0.8rem; border:1px solid var(--amber); background:white; font-family:'DM Sans',sans-serif; font-size:0.88rem; outline:none; border-radius:2px; }
@@ -113,9 +123,12 @@ const css = `
   .ti { display:flex; gap:0.55rem; padding:0.28rem 0; font-size:0.82rem; border-bottom:1px solid rgba(0,0,0,0.04); }
   .tn { font-family:'DM Mono',monospace; font-size:0.65rem; color:var(--dust); width:1.3rem; flex-shrink:0; }
   .mod-notes { padding:0.85rem; background:white; border-left:3px solid var(--dust); font-size:0.83rem; color:var(--dust); font-style:italic; }
+  .mod-actions { display:flex; gap:0.6rem; margin-top:1.1rem; flex-wrap:wrap; }
   .cls-btn { float:right; background:none; border:1px solid rgba(0,0,0,0.15); width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1rem; border-radius:2px; color:var(--dust); transition:all 0.15s; margin-bottom:0.65rem; }
   .cls-btn:hover { background:var(--red); border-color:var(--red); color:white; }
-  .del-btn { margin-top:1.1rem; background:none; border:1px solid var(--red); color:var(--red); padding:0.32rem 0.85rem; font-family:'DM Mono',monospace; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em; cursor:pointer; border-radius:2px; transition:all 0.15s; }
+  .edit-btn { background:none; border:1px solid var(--amber); color:var(--amber); padding:0.32rem 0.85rem; font-family:'DM Mono',monospace; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em; cursor:pointer; border-radius:2px; transition:all 0.15s; }
+  .edit-btn:hover { background:var(--amber); color:var(--ink); }
+  .del-btn { background:none; border:1px solid var(--red); color:var(--red); padding:0.32rem 0.85rem; font-family:'DM Mono',monospace; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em; cursor:pointer; border-radius:2px; transition:all 0.15s; }
   .del-btn:hover { background:var(--red); color:white; }
   .form-wrap { max-width:680px; margin:0 auto; }
   .ft { font-family:'Playfair Display',serif; font-size:1.55rem; margin-bottom:0.28rem; }
@@ -133,18 +146,24 @@ const css = `
   .pz-actions { display:flex; flex-direction:column; gap:0.35rem; width:100%; padding:0.5rem; }
   .pz-action-btn { background:rgba(237,232,220,0.12); border:1px solid rgba(200,134,42,0.5); color:var(--amber); font-family:'DM Mono',monospace; font-size:0.58rem; text-transform:uppercase; letter-spacing:0.07em; padding:0.32rem 0.4rem; border-radius:2px; cursor:pointer; transition:all 0.15s; text-align:center; }
   .pz-action-btn:hover { background:var(--amber); color:var(--ink); }
-  .ai-btn { width:100%; padding:0.75rem; background:var(--ink); color:var(--amber); border:none; font-family:'DM Mono',monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; cursor:pointer; margin-bottom:1.35rem; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:0.45rem; border-radius:2px; }
+  .ai-btn { width:100%; padding:0.75rem; background:var(--ink); color:var(--amber); border:none; font-family:'DM Mono',monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; cursor:pointer; margin-bottom:0.55rem; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:0.45rem; border-radius:2px; }
   .ai-btn:hover:not(:disabled) { background:var(--amber); color:var(--ink); }
   .ai-btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .mb-btn { width:100%; padding:0.65rem; background:transparent; color:var(--dust); border:1px solid rgba(140,123,94,0.45); font-family:'DM Mono',monospace; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.1em; cursor:pointer; margin-bottom:1.35rem; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:0.45rem; border-radius:2px; }
+  .mb-btn:hover:not(:disabled) { border-color:var(--dust); background:var(--paper); color:var(--ink); }
+  .mb-btn:disabled { opacity:0.35; cursor:not-allowed; }
   .ai-st { text-align:center; font-family:'DM Mono',monospace; font-size:0.7rem; color:var(--amber); margin-bottom:0.75rem; min-height:1rem; }
+  .year-warn { font-family:'DM Mono',monospace; font-size:0.6rem; color:#B87A2A; margin-top:0.2rem; }
   .fsec { margin-bottom:1.35rem; padding:1.1rem; background:var(--paper); border-left:3px solid var(--amber); border-radius:0 2px 2px 0; }
   .fsec-t { font-family:'DM Mono',monospace; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--amber); margin-bottom:0.9rem; }
   .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
   .fgrid3 { grid-template-columns:1fr 1fr 1fr; }
   .ff { display:flex; flex-direction:column; gap:0.28rem; }
   .ff label { font-family:'DM Mono',monospace; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--dust); }
+  .ff label .req { color:var(--amber); margin-left:2px; }
   .ff input,.ff select,.ff textarea { padding:0.42rem 0.65rem; border:1px solid rgba(26,18,8,0.15); background:white; font-family:'DM Sans',sans-serif; font-size:0.86rem; outline:none; border-radius:2px; transition:border-color 0.15s; }
   .ff input:focus,.ff select:focus,.ff textarea:focus { border-color:var(--amber); }
+  .ff input.req-missing { border-color:var(--red) !important; }
   .ff textarea { resize:vertical; min-height:68px; }
   .tled { display:grid; grid-template-columns:1fr 1fr; gap:1.1rem; }
   .tled h4 { font-family:'DM Mono',monospace; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--amber); margin-bottom:0.6rem; }
@@ -159,6 +178,8 @@ const css = `
   .save-btn { width:100%; padding:0.85rem; background:var(--amber); color:var(--ink); border:none; font-family:'DM Mono',monospace; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.12em; cursor:pointer; font-weight:500; transition:all 0.2s; margin-top:0.75rem; border-radius:2px; }
   .save-btn:hover:not(:disabled) { background:var(--ink); color:var(--amber); }
   .save-btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .cancel-btn { width:100%; padding:0.65rem; background:transparent; color:var(--dust); border:1px solid rgba(140,123,94,0.35); font-family:'DM Mono',monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; cursor:pointer; margin-top:0.5rem; border-radius:2px; transition:all 0.2s; }
+  .cancel-btn:hover { background:var(--paper); color:var(--ink); }
   .toast { position:fixed; bottom:1.25rem; right:1.25rem; background:var(--ink); color:var(--amber); padding:0.6rem 1rem; font-family:'DM Mono',monospace; font-size:0.72rem; letter-spacing:0.06em; z-index:999; box-shadow:0 8px 32px rgba(0,0,0,0.3); animation:sIn 0.3s ease; border-radius:2px; }
   .toast.err { color:#FF8A8A; }
   @keyframes sIn { from{transform:translateX(120%);opacity:0} to{transform:translateX(0);opacity:1} }
@@ -168,6 +189,19 @@ const css = `
   .empty p { font-family:'Playfair Display',serif; font-size:1.15rem; font-style:italic; margin-top:0.85rem; }
   .zoom-ov { position:fixed; inset:0; background:rgba(0,0,0,0.96); z-index:300; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
   .zoom-ov img { max-width:92vw; max-height:92vh; object-fit:contain; }
+  /* ── Password modal ─────────────────────────────────────────────────────── */
+  .pw-ov { position:fixed; inset:0; background:rgba(10,8,4,0.93); z-index:400; display:flex; align-items:center; justify-content:center; padding:1rem; backdrop-filter:blur(6px); }
+  .pw-box { background:var(--cream); max-width:340px; width:100%; border-top:4px solid var(--amber); padding:2rem; box-shadow:0 32px 80px rgba(0,0,0,0.5); border-radius:0 0 2px 2px; }
+  .pw-title { font-family:'Playfair Display',serif; font-size:1.25rem; margin-bottom:0.25rem; }
+  .pw-sub { font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--dust); text-transform:uppercase; letter-spacing:0.09em; margin-bottom:1.5rem; }
+  .pw-input { width:100%; padding:0.55rem 0.75rem; border:1px solid rgba(26,18,8,0.2); background:white; font-family:'DM Mono',monospace; font-size:1rem; outline:none; border-radius:2px; margin-bottom:0.7rem; transition:border-color 0.15s; letter-spacing:0.12em; }
+  .pw-input:focus { border-color:var(--amber); }
+  .pw-input.pw-err-field { border-color:var(--red); }
+  .pw-err { font-family:'DM Mono',monospace; font-size:0.65rem; color:var(--red); margin-bottom:0.7rem; letter-spacing:0.04em; }
+  .pw-submit { width:100%; padding:0.72rem; background:var(--amber); color:var(--ink); border:none; font-family:'DM Mono',monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; cursor:pointer; border-radius:2px; font-weight:500; transition:all 0.2s; }
+  .pw-submit:hover { background:var(--ink); color:var(--amber); }
+  .pw-cancel { width:100%; padding:0.55rem; background:transparent; color:var(--dust); border:1px solid rgba(140,123,94,0.3); font-family:'DM Mono',monospace; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; cursor:pointer; border-radius:2px; margin-top:0.5rem; transition:all 0.2s; }
+  .pw-cancel:hover { background:var(--paper); color:var(--ink); }
   @media(max-width:600px){
     .main{padding:0.9rem;}
     .gal{grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:0.8rem;}
@@ -202,18 +236,65 @@ function b64(file) {
   });
 }
 
+// ── Password modal ────────────────────────────────────────────────────────────
+function PasswordModal({ onSuccess, onCancel }) {
+  const [pw, setPw]   = useState("");
+  const [err, setErr] = useState(false);
+
+  function submit() {
+    if (pw === ADMIN_PASSWORD) {
+      onSuccess();
+    } else {
+      setErr(true);
+      setPw("");
+    }
+  }
+
+  function onKey(e) {
+    if (e.key === "Enter")  submit();
+    if (e.key === "Escape") onCancel();
+  }
+
+  return (
+    <div className="pw-ov" onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="pw-box">
+        <div className="pw-title">Admin access</div>
+        <div className="pw-sub">Enter password to continue</div>
+        <input
+          className={`pw-input${err ? " pw-err-field" : ""}`}
+          type="password"
+          placeholder="••••••••"
+          value={pw}
+          autoFocus
+          onChange={e => { setPw(e.target.value); setErr(false); }}
+          onKeyDown={onKey}
+        />
+        {err && <div className="pw-err">Incorrect password — try again</div>}
+        <button className="pw-submit" onClick={submit}>Unlock</button>
+        <button className="pw-cancel" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView] = useState("col");
-  const [dm, setDm] = useState("gal");
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
-  const [fg, setFg] = useState("");
-  const [fc, setFc] = useState("");
-  const [sel, setSel] = useState(null);
-  const [zoom, setZoom] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [view, setView]           = useState("col"); // "col" | "add" | "edit"
+  const [editRecord, setEditRecord] = useState(null);
+  const [dm, setDm]               = useState("gal");
+  const [records, setRecords]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [q, setQ]                 = useState("");
+  const [fg, setFg]               = useState("");
+  const [fc, setFc]               = useState("");
+  const [sel, setSel]             = useState(null);
+  const [zoom, setZoom]           = useState(null);
+  const [toast, setToast]         = useState(null);
+
+  // Session-level admin flag — survives within the tab, resets on full reload
+  const [isAdmin, setIsAdmin]     = useState(false);
+  // Pending protected action — { action: fn } | null
+  const [pwPending, setPwPending] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -229,15 +310,51 @@ export default function App() {
     setTimeout(() => setToast(null), 3400);
   }
 
+  // Wrap any write action with password gate
+  function requireAdmin(action) {
+    if (isAdmin) { action(); }
+    else { setPwPending({ action }); }
+  }
+
+  function onPwSuccess() {
+    setIsAdmin(true);
+    const action = pwPending?.action;
+    setPwPending(null);
+    if (action) action();
+  }
+
   const gi = (rec, type) => rec.images?.find(i => i.type === type)?.url;
 
   const filtered = records.filter(r => {
     const s = q.toLowerCase();
-    return (!s || r.artist?.toLowerCase().includes(s) || r.album?.toLowerCase().includes(s) ||
-      (r.tracklist_a||[]).some(t=>t.toLowerCase().includes(s)) ||
-      (r.tracklist_b||[]).some(t=>t.toLowerCase().includes(s))) &&
-      (!fg || r.genre === fg) && (!fc || r.condition === fc);
+    return (
+      (!s || r.artist?.toLowerCase().includes(s) || r.album?.toLowerCase().includes(s) ||
+        (r.tracklist_a||[]).some(t=>t.toLowerCase().includes(s)) ||
+        (r.tracklist_b||[]).some(t=>t.toLowerCase().includes(s))) &&
+      (!fg || r.genre === fg) &&
+      (!fc || r.condition === fc)
+    );
   });
+
+  function goAdd() {
+    requireAdmin(() => { setEditRecord(null); setView("add"); });
+  }
+
+  function goEdit(rec) {
+    requireAdmin(() => { setEditRecord(rec); setSel(null); setView("edit"); });
+  }
+
+  function goDelete(rec) {
+    requireAdmin(async () => {
+      if (!window.confirm("Delete this record?")) return;
+      try {
+        await sbDelete("records", rec.id);
+        setSel(null); load(); msg("Record deleted");
+      } catch(e) {
+        console.error(e); msg("Error deleting", "err");
+      }
+    });
+  }
 
   return (
     <>
@@ -245,13 +362,14 @@ export default function App() {
       <header className="hdr">
         <div className="hdr-logo"><VI s={25} c="#C8862A" /> Vinyl Archive <em>/ collection</em></div>
         <nav className="hdr-nav">
-          <button className={`nb ${view!=="add"?"on":""}`} onClick={()=>setView("col")}>Collection</button>
-          <button className={`nb ${view==="add"?"on":""}`} onClick={()=>setView("add")}>+ Add</button>
+          {isAdmin && <span className="auth-badge">🔓 admin</span>}
+          <button className={`nb ${view==="col"?"on":""}`} onClick={()=>setView("col")}>Collection</button>
+          <button className={`nb ${view!=="col"?"on":""}`} onClick={goAdd}>+ Add</button>
         </nav>
       </header>
 
       <main className="main">
-        {view !== "add" ? (
+        {view === "col" ? (
           <>
             <div className="sbar">
               <input className="si" placeholder="Search artist, album, track…" value={q} onChange={e=>setQ(e.target.value)} />
@@ -283,8 +401,8 @@ export default function App() {
                   <div key={r.id} className="rc" onClick={()=>setSel(r)}>
                     {gi(r,"front") ? <img className="rc-img" src={gi(r,"front")} alt={r.album} /> : <div className="rc-ph"><VI s={52} /></div>}
                     <div className="rc-info">
-                      <div className="rc-art">{r.artist}</div>
-                      <div className="rc-alb">{r.album}</div>
+                      <div className="rc-art">{r.artist||"—"}</div>
+                      <div className="rc-alb">{r.album||"—"}</div>
                       <div className="rc-yr">{[r.year,r.genre].filter(Boolean).join(" · ")}</div>
                     </div>
                   </div>
@@ -296,8 +414,8 @@ export default function App() {
                 {filtered.map(r => (
                   <div key={r.id} className="lr" onClick={()=>setSel(r)}>
                     {gi(r,"front") ? <img className="lt" src={gi(r,"front")} alt="" /> : <div className="lt-ph"><VI s={20} /></div>}
-                    <div className="l-art">{r.artist}</div>
-                    <div className="l-alb">{r.album}</div>
+                    <div className="l-art">{r.artist||"—"}</div>
+                    <div className="l-alb">{r.album||"—"}</div>
                     <div className="l-m">{r.year||"—"}</div>
                     <div className="l-m">{r.genre||"—"}</div>
                     <div className="l-m">{r.condition||"—"}</div>
@@ -307,10 +425,17 @@ export default function App() {
             )}
           </>
         ) : (
-          <AddForm onSaved={()=>{setView("col");load();msg("Record saved!");}} onMsg={msg} />
+          <RecordForm
+            key={editRecord?.id ?? "new"}
+            record={editRecord}
+            onSaved={() => { setView("col"); load(); msg(editRecord ? "Record updated!" : "Record saved!"); }}
+            onCancel={() => setView("col")}
+            onMsg={msg}
+          />
         )}
       </main>
 
+      {/* ── Detail modal ── */}
       {sel && (
         <div className="ov" onClick={e=>e.target===e.currentTarget&&setSel(null)}>
           <div className="mod">
@@ -320,12 +445,14 @@ export default function App() {
                 {[["front","Front cover"],["back","Back cover"],["label","Label"]].map(([t,l])=>(
                   <div key={t}>
                     <div className="ph-lbl">{l}</div>
-                    {gi(sel,t) ? <img className="mod-img" src={gi(sel,t)} alt={l} onClick={()=>setZoom(gi(sel,t))} /> : <div className="mod-img-ph"><VI s={34} /></div>}
+                    {gi(sel,t)
+                      ? <img className="mod-img" src={gi(sel,t)} alt={l} onClick={()=>setZoom(gi(sel,t))} />
+                      : <div className="mod-img-ph"><VI s={34} /></div>}
                   </div>
                 ))}
               </div>
-              <div className="mod-art">{sel.artist}</div>
-              <div className="mod-title">{sel.album}</div>
+              <div className="mod-art">{sel.artist||"—"}</div>
+              <div className="mod-title">{sel.album||"—"}</div>
               {sel.edition && <div style={{fontFamily:"DM Mono",fontSize:"0.7rem",color:"var(--dust)",marginBottom:"0.9rem"}}>{sel.edition}</div>}
               <div className="mod-fields">
                 {[["Year",sel.year],["Label",sel.label],["Country",sel.country],["Genre",sel.genre],["Speed",sel.speed?`${sel.speed} RPM`:null],["Condition",sel.condition],["Catalog №",sel.catalog_number]]
@@ -347,11 +474,10 @@ export default function App() {
                 </div>
               )}
               {sel.notes && <div className="mod-notes">"{sel.notes}"</div>}
-              <button className="del-btn" onClick={async()=>{
-                if(!window.confirm("Delete this record?")) return;
-                await sbDelete("records",sel.id);
-                setSel(null); load(); msg("Record deleted");
-              }}>Delete record</button>
+              <div className="mod-actions">
+                <button className="edit-btn" onClick={()=>goEdit(sel)}>✎ Edit</button>
+                <button className="del-btn"  onClick={()=>goDelete(sel)}>Delete</button>
+              </div>
             </div>
           </div>
         </div>
@@ -359,23 +485,59 @@ export default function App() {
 
       {zoom && <div className="zoom-ov" onClick={()=>setZoom(null)}><img src={zoom} alt="zoom" /></div>}
       {toast && <div className={`toast ${toast.type==="err"?"err":""}`}>{toast.text}</div>}
+
+      {/* ── Password modal ── */}
+      {pwPending && (
+        <PasswordModal
+          onSuccess={onPwSuccess}
+          onCancel={() => setPwPending(null)}
+        />
+      )}
     </>
   );
 }
 
-// ── Add form ─────────────────────────────────────────────────────────────────
-function AddForm({ onSaved, onMsg }) {
-  const [ph, setPh] = useState({front:null,back:null,label:null});
-  const [pv, setPv] = useState({front:null,back:null,label:null});
-  const [aiSt, setAiSt] = useState("");
-  const [analyzing, setAnalyzing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const ef = {artist:"",album:"",year:"",label:"",country:"",genre:"",speed:"33",condition:"",edition:"",catalog_number:"",notes:"",tracklist_a:[""],tracklist_b:[""]};
-  const [f, setF] = useState(ef);
+// ── Record form — shared by Add and Edit ─────────────────────────────────────
+function RecordForm({ record, onSaved, onCancel, onMsg }) {
+  const isEdit = Boolean(record);
 
-  // Hidden file input refs — one per photo type × source
-  const camRef = { front: useRef(null), back: useRef(null), label: useRef(null) };
-  const galRef = { front: useRef(null), back: useRef(null), label: useRef(null) };
+  const emptyFields = {
+    artist:"", album:"", year:"", label:"", country:"",
+    genre:"", speed:"33", condition:"", edition:"",
+    catalog_number:"", notes:"", tracklist_a:[""], tracklist_b:[""],
+  };
+
+  const initialFields = isEdit ? {
+    artist:         record.artist          || "",
+    album:          record.album           || "",
+    year:           record.year            ? String(record.year) : "",
+    label:          record.label           || "",
+    country:        record.country         || "",
+    genre:          record.genre           || "",
+    speed:          record.speed           || "33",
+    condition:      record.condition       || "",
+    edition:        record.edition         || "",
+    catalog_number: record.catalog_number  || "",
+    notes:          record.notes           || "",
+    tracklist_a:    record.tracklist_a?.length ? record.tracklist_a : [""],
+    tracklist_b:    record.tracklist_b?.length ? record.tracklist_b : [""],
+  } : emptyFields;
+
+  const [ph, setPh]           = useState({ front:null, back:null, label_img:null });
+  const [pv, setPv]           = useState({
+    front:     isEdit ? (record.images?.find(i=>i.type==="front")?.url  || null) : null,
+    back:      isEdit ? (record.images?.find(i=>i.type==="back")?.url   || null) : null,
+    label_img: isEdit ? (record.images?.find(i=>i.type==="label")?.url  || null) : null,
+  });
+  const [f, setF]             = useState(initialFields);
+  const [aiSt, setAiSt]       = useState("");
+  const [analyzing, setAnalyzing]   = useState(false);
+  const [mbSearching, setMbSearching] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [showReqErr, setShowReqErr] = useState(false);
+
+  const camRef = { front: useRef(null), back: useRef(null), label_img: useRef(null) };
+  const galRef = { front: useRef(null), back: useRef(null), label_img: useRef(null) };
 
   function onFileChange(type, e) {
     const file = e.target.files?.[0];
@@ -385,137 +547,174 @@ function AddForm({ onSaved, onMsg }) {
     e.target.value = "";
   }
 
+  // ── Optional AI image analysis ────────────────────────────────────────────
   async function analyze() {
     const avail = Object.entries(ph).filter(([,v])=>v);
-    if(!avail.length){onMsg("Upload at least one photo first","err");return;}
+    if (!avail.length) { onMsg("Upload at least one photo first","err"); return; }
     setAnalyzing(true); setAiSt("Converting images…");
     try {
-      // ── Step 1: AI image analysis ──────────────────────────────────────────
       const content = [];
-      for(const [type,file] of avail){
+      for (const [type, file] of avail) {
         const data = await b64(file);
-        content.push({type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data}});
-        content.push({type:"text",text:`This is the ${type==="front"?"front cover":type==="back"?"back cover":"record label (galleta)"} of a vinyl record.`});
+        const label = type==="front" ? "front cover" : type==="back" ? "back cover" : "record label (galleta)";
+        content.push({ type:"image", source:{ type:"base64", media_type:file.type||"image/jpeg", data } });
+        content.push({ type:"text", text:`This is the ${label} of a vinyl record.` });
       }
-      content.push({type:"text",text:`Analyze these vinyl record images and extract all visible information.
+      content.push({ type:"text", text:`Analyze these vinyl record images and extract all visible information.
 Return ONLY a valid JSON object (no markdown, no backticks, no extra text) with exactly these fields:
 {"artist":"","album":"","year":"","label":"","country":"","genre":"","speed":"","catalog_number":"","edition":"","tracklist_a":[],"tracklist_b":[]}
-Rules: leave fields empty string if not visible. speed must be "33","45","78" or "". genre must be one of: Blues,Classical,Country,Electronic,Folk,Funk,Jazz,Latin,Pop,Punk,R&B / Soul,Reggae,Rock,Soundtrack,World — or "". tracklist arrays contain track title strings, empty array if none visible.`});
+Rules: leave fields as empty string if not visible. speed must be "33","45","78" or "". genre must be one of: Blues,Classical,Country,Electronic,Folk,Funk,Jazz,Latin,Pop,Punk,R&B / Soul,Reggae,Rock,Soundtrack,World — or "". tracklist arrays contain track title strings, empty array if none visible.` });
       setAiSt("Claude is reading your vinyl…");
       const res = await fetch("/.netlify/functions/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1000, messages: [{ role: "user", content }] }),
+        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1000, messages: [{ role:"user", content }] }),
       });
       const d = await res.json();
-      const txt = d.content?.find(b=>b.type==="text")?.text||"";
+      const txt = d.content?.find(b=>b.type==="text")?.text || "";
       const p = JSON.parse(txt.replace(/```json|```/g,"").trim());
-
-      // Build the AI-filled state (kept as base for MusicBrainz merge)
-      const aiFields = {
-        artist:p.artist||"", album:p.album||"", year:p.year||"",
-        label:p.label||"", country:p.country||"",
-        genre:GENRES.includes(p.genre)?p.genre:"",
-        speed:["33","45","78"].includes(String(p.speed))?String(p.speed):"33",
-        catalog_number:p.catalog_number||"", edition:p.edition||"",
-        tracklist_a:p.tracklist_a?.length>0?p.tracklist_a:[""],
-        tracklist_b:p.tracklist_b?.length>0?p.tracklist_b:[""],
-      };
-
-      setF(prev=>({...prev,...aiFields}));
-
-      // ── Step 2: MusicBrainz enrichment (only if AI found artist + album) ──
-      if(aiFields.artist && aiFields.album){
-        setAiSt("Searching MusicBrainz for metadata…");
-        try {
-          const mbRes = await fetch("/.netlify/functions/musicbrainz", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ artist: aiFields.artist, album: aiFields.album }),
-          });
-          if(mbRes.ok){
-            const mb = await mbRes.json();
-            if(mb.found){
-              // Only fill fields that AI left empty
-              setF(prev=>({
-                ...prev,
-                year:           prev.year            || mb.year            || prev.year,
-                label:          prev.label           || mb.label           || prev.label,
-                country:        prev.country         || mb.country         || prev.country,
-                catalog_number: prev.catalog_number  || mb.catalog_number  || prev.catalog_number,
-                tracklist_a:    (prev.tracklist_a.filter(t=>t.trim()).length > 0)
-                                  ? prev.tracklist_a
-                                  : (mb.tracklist_a?.length > 0 ? mb.tracklist_a : prev.tracklist_a),
-                tracklist_b:    (prev.tracklist_b.filter(t=>t.trim()).length > 0)
-                                  ? prev.tracklist_b
-                                  : (mb.tracklist_b?.length > 0 ? mb.tracklist_b : prev.tracklist_b),
-              }));
-              setAiSt("✓ Fields filled by AI + MusicBrainz — review and confirm");
-            } else {
-              setAiSt("✓ Fields filled by AI — MusicBrainz had no match");
-            }
-          } else {
-            setAiSt("✓ Fields filled by AI — MusicBrainz unavailable");
-          }
-        } catch(mbErr) {
-          console.warn("MusicBrainz lookup failed:", mbErr);
-          setAiSt("✓ Fields filled by AI — MusicBrainz lookup failed");
-        }
-      } else {
-        setAiSt("✓ Fields filled — review and confirm");
-      }
+      setF(prev=>({
+        ...prev,
+        artist:         p.artist         || prev.artist,
+        album:          p.album          || prev.album,
+        year:           p.year           || prev.year,
+        label:          p.label          || prev.label,
+        country:        p.country        || prev.country,
+        genre:          GENRES.includes(p.genre) ? p.genre : prev.genre,
+        speed:          ["33","45","78"].includes(String(p.speed)) ? String(p.speed) : prev.speed,
+        catalog_number: p.catalog_number || prev.catalog_number,
+        edition:        p.edition        || prev.edition,
+        tracklist_a:    p.tracklist_a?.length > 0 ? p.tracklist_a : prev.tracklist_a,
+        tracklist_b:    p.tracklist_b?.length > 0 ? p.tracklist_b : prev.tracklist_b,
+      }));
+      setAiSt("✓ AI done — check artist & album, then use MusicBrainz to complete");
     } catch(e) {
-      console.error(e); onMsg("AI analysis failed — fill manually","err"); setAiSt("");
+      console.error(e); onMsg("AI analysis failed — fill fields manually","err"); setAiSt("");
     } finally { setAnalyzing(false); }
   }
 
-  const u = (k,v) => setF(p=>({...p,[k]:v}));
+  // ── Manual MusicBrainz lookup ─────────────────────────────────────────────
+  async function searchMusicBrainz() {
+    if (!f.artist || !f.album) return;
+    setMbSearching(true); setAiSt("Searching MusicBrainz…");
+    try {
+      const res = await fetch("/.netlify/functions/musicbrainz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artist: f.artist, album: f.album }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const mb = await res.json();
+      if (mb.found) {
+        setF(prev=>({
+          ...prev,
+          year:           prev.year           || mb.year           || prev.year,
+          label:          prev.label          || mb.label          || prev.label,
+          country:        prev.country        || mb.country        || prev.country,
+          catalog_number: prev.catalog_number || mb.catalog_number || prev.catalog_number,
+          tracklist_a:    prev.tracklist_a.filter(t=>t.trim()).length > 0
+                            ? prev.tracklist_a
+                            : (mb.tracklist_a?.length > 0 ? mb.tracklist_a : prev.tracklist_a),
+          tracklist_b:    prev.tracklist_b.filter(t=>t.trim()).length > 0
+                            ? prev.tracklist_b
+                            : (mb.tracklist_b?.length > 0 ? mb.tracklist_b : prev.tracklist_b),
+        }));
+        setAiSt("✓ MusicBrainz fields filled — review and save");
+      } else {
+        setAiSt("MusicBrainz: no match found for this artist + album");
+      }
+    } catch(e) {
+      console.error(e); setAiSt("MusicBrainz search failed — fill fields manually");
+    } finally { setMbSearching(false); }
+  }
+
+  const u  = (k,v)   => setF(p=>({...p,[k]:v}));
   const ut = (side,i,v) => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=[...p[k]];l[i]=v;return{...p,[k]:l};}); };
-  const at = side => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>({...p,[k]:[...p[k],""]})); };
-  const rt = (side,i) => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=p[k].filter((_,x)=>x!==i);return{...p,[k]:l.length?l:[""]};}); };
+  const at = side    => { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>({...p,[k]:[...p[k],""]})); };
+  const rt = (side,i)=> { const k=side==="A"?"tracklist_a":"tracklist_b"; setF(p=>{const l=p[k].filter((_,x)=>x!==i);return{...p,[k]:l.length?l:[""]};}); };
 
   async function save() {
-    if(!f.artist||!f.album){onMsg("Artist and album required","err");return;}
+    if (!f.artist || !f.album) {
+      setShowReqErr(true);
+      onMsg("Artist and album are required","err");
+      return;
+    }
+    setShowReqErr(false);
     setSaving(true);
     try {
-      const [rec] = await sbInsert("records",{
-        artist:f.artist, album:f.album, year:f.year?parseInt(f.year):null,
-        label:f.label||null, country:f.country||null, genre:f.genre||null,
-        speed:f.speed||null, condition:f.condition||null, edition:f.edition||null,
-        catalog_number:f.catalog_number||null, notes:f.notes||null,
-        tracklist_a:f.tracklist_a.filter(t=>t.trim()),
-        tracklist_b:f.tracklist_b.filter(t=>t.trim()),
-      });
-      for(const [type,file] of Object.entries(ph)){
-        if(!file) continue;
-        const ext = file.name.split(".").pop()||"jpg";
-        const url = await sbUpload(`${rec.id}/${type}.${ext}`,file);
-        await sbInsert("images",{record_id:rec.id,type,url});
+      const payload = {
+        artist:         f.artist          || null,
+        album:          f.album           || null,
+        year:           f.year            ? parseInt(f.year) : null,
+        label:          f.label           || null,
+        country:        f.country         || null,
+        genre:          f.genre           || null,
+        speed:          f.speed           || null,
+        condition:      f.condition       || null,
+        edition:        f.edition         || null,
+        catalog_number: f.catalog_number  || null,
+        notes:          f.notes           || null,
+        tracklist_a:    f.tracklist_a.filter(t=>t.trim()),
+        tracklist_b:    f.tracklist_b.filter(t=>t.trim()),
+      };
+
+      let recordId;
+      if (isEdit) {
+        await sbUpdate("records", record.id, payload);
+        recordId = record.id;
+      } else {
+        const [rec] = await sbInsert("records", payload);
+        recordId = rec.id;
       }
+
+      // Upload any new or replaced photos
+      for (const [type, file] of Object.entries(ph)) {
+        if (!file) continue;
+        const storageType = type === "label_img" ? "label" : type;
+        const ext = file.name.split(".").pop() || "jpg";
+        const url = await sbUpload(`${recordId}/${storageType}.${ext}`, file);
+        if (isEdit) {
+          const existing = record.images?.find(i=>i.type===storageType);
+          if (existing) {
+            await sbUpdate("images", existing.id, { url });
+          } else {
+            await sbInsert("images", { record_id: recordId, type: storageType, url });
+          }
+        } else {
+          await sbInsert("images", { record_id: recordId, type: storageType, url });
+        }
+      }
+
       onSaved();
     } catch(e) {
       console.error(e); onMsg("Error saving","err");
     } finally { setSaving(false); }
   }
 
+  const canMusicBrainz = f.artist.trim() && f.album.trim() && !mbSearching && !analyzing;
+
   return (
     <div className="form-wrap">
-      <div className="ft">Add a new record</div>
-      <div className="fs2">Photos → AI fills fields → Review → Save</div>
+      <div className="ft">{isEdit ? "Edit record" : "Add a new record"}</div>
+      <div className="fs2">
+        {isEdit
+          ? "Update fields · MusicBrainz fills gaps · save changes"
+          : "Photos optional · AI optional · fill artist + album · save"}
+      </div>
 
-      {/* Hidden file inputs — camera */}
-      {["front","back","label"].map(k => (
+      {/* Hidden file inputs */}
+      {["front","back","label_img"].map(k=>(
         <input key={`cam-${k}`} ref={camRef[k]} type="file" accept="image/*" capture="environment"
           style={{display:"none"}} onChange={e=>onFileChange(k,e)} />
       ))}
-      {/* Hidden file inputs — gallery */}
-      {["front","back","label"].map(k => (
+      {["front","back","label_img"].map(k=>(
         <input key={`gal-${k}`} ref={galRef[k]} type="file" accept="image/*"
           style={{display:"none"}} onChange={e=>onFileChange(k,e)} />
       ))}
 
+      {/* Photo zones */}
       <div className="pzones">
-        {[["front","Front"],["back","Back"],["label","Label"]].map(([k,l])=>(
+        {[["front","Front"],["back","Back"],["label_img","Label"]].map(([k,l])=>(
           <div key={k} className={`pz ${pv[k]?"filled":""}`}>
             {pv[k] ? (
               <>
@@ -539,19 +738,47 @@ Rules: leave fields empty string if not visible. speed must be "33","45","78" or
         ))}
       </div>
 
-      <button className="ai-btn" onClick={analyze} disabled={analyzing||!Object.values(ph).some(Boolean)}>
-        {analyzing ? <><span className="spin"/>Analyzing…</> : "✦ Analyze with AI"}
+      {/* AI — optional, requires photos */}
+      <button className="ai-btn" onClick={analyze} disabled={analyzing || !Object.values(ph).some(Boolean)}>
+        {analyzing ? <><span className="spin"/>Analyzing…</> : "✦ Analyze with AI  (optional)"}
       </button>
+
+      {/* MusicBrainz — manual, requires artist + album */}
+      <button className="mb-btn" onClick={searchMusicBrainz} disabled={!canMusicBrainz}>
+        {mbSearching ? <><span className="spin"/>Searching MusicBrainz…</> : "⊕ Complete with MusicBrainz"}
+      </button>
+
       {aiSt && <div className="ai-st">{aiSt}</div>}
 
+      {/* Record info */}
       <div className="fsec">
         <div className="fsec-t">Record info</div>
         <div className="fgrid" style={{marginBottom:"0.75rem"}}>
-          <div className="ff"><label>Artist *</label><input value={f.artist} onChange={e=>u("artist",e.target.value)} placeholder="Artist or band" /></div>
-          <div className="ff"><label>Album *</label><input value={f.album} onChange={e=>u("album",e.target.value)} placeholder="Album title" /></div>
+          <div className="ff">
+            <label>Artist <span className="req">*</span></label>
+            <input
+              className={showReqErr && !f.artist ? "req-missing" : ""}
+              value={f.artist}
+              onChange={e=>{ u("artist",e.target.value); setShowReqErr(false); }}
+              placeholder="Artist or band"
+            />
+          </div>
+          <div className="ff">
+            <label>Album <span className="req">*</span></label>
+            <input
+              className={showReqErr && !f.album ? "req-missing" : ""}
+              value={f.album}
+              onChange={e=>{ u("album",e.target.value); setShowReqErr(false); }}
+              placeholder="Album title"
+            />
+          </div>
         </div>
         <div className="fgrid fgrid3">
-          <div className="ff"><label>Year</label><input type="number" value={f.year} onChange={e=>u("year",e.target.value)} placeholder="1972" /></div>
+          <div className="ff">
+            <label>Year</label>
+            <input type="number" value={f.year} onChange={e=>u("year",e.target.value)} placeholder="1972" />
+            {!f.year && <div className="year-warn">⚠ use MusicBrainz to fill</div>}
+          </div>
           <div className="ff"><label>Label</label><input value={f.label} onChange={e=>u("label",e.target.value)} placeholder="Blue Note…" /></div>
           <div className="ff"><label>Country</label><input value={f.country} onChange={e=>u("country",e.target.value)} placeholder="USA, UK…" /></div>
           <div className="ff"><label>Genre</label>
@@ -574,6 +801,7 @@ Rules: leave fields empty string if not visible. speed must be "33","45","78" or
         </div>
       </div>
 
+      {/* Tracklist */}
       <div className="fsec">
         <div className="fsec-t">Tracklist</div>
         <div className="tled">
@@ -596,14 +824,18 @@ Rules: leave fields empty string if not visible. speed must be "33","45","78" or
         </div>
       </div>
 
+      {/* Notes */}
       <div className="fsec">
         <div className="fsec-t">Personal notes</div>
-        <div className="ff"><textarea value={f.notes} onChange={e=>u("notes",e.target.value)} placeholder="Where you got it, memories…" rows={3} /></div>
+        <div className="ff">
+          <textarea value={f.notes} onChange={e=>u("notes",e.target.value)} placeholder="Where you got it, memories…" rows={3} />
+        </div>
       </div>
 
       <button className="save-btn" onClick={save} disabled={saving}>
-        {saving?"Saving…":"Save to collection"}
+        {saving ? "Saving…" : isEdit ? "Save changes" : "Save to collection"}
       </button>
+      <button className="cancel-btn" onClick={onCancel}>Cancel</button>
     </div>
   );
 }
