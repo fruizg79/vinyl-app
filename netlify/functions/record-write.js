@@ -1,4 +1,4 @@
-const SB_URL = process.env.SUPABASE_URL;
+const SB_URL = "https://tjkrgnznsspbpzgaskpk.supabase.co";
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const sbH = {
@@ -89,11 +89,11 @@ exports.handler = async function (event) {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  if (!SB_URL || !SB_KEY) {
+  if (!SB_KEY) {
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Server misconfigured — check environment variables" }),
+      body: JSON.stringify({ error: "Server misconfigured — SUPABASE_SERVICE_KEY missing" }),
     };
   }
 
@@ -174,7 +174,6 @@ exports.handler = async function (event) {
     // ── DELETE record ───────────────────────────────────────────────────────
     if (action === "delete") {
       const { id } = payload;
-      // Delete image rows first, then the record
       await sbDeleteWhere("images", "record_id", id);
       await sbDelete("records", id);
 

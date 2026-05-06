@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-const SB_URL = process.env.SUPABASE_URL;
+const SB_URL = "https://tjkrgnznsspbpzgaskpk.supabase.co";
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -16,7 +16,7 @@ exports.handler = async function (event) {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  if (!ADMIN_PASSWORD || !SB_URL || !SB_KEY) {
+  if (!ADMIN_PASSWORD || !SB_KEY) {
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json" },
